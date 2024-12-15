@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>عرض ملف CSV على صفحات</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            direction: rtl;
+            text-align: center;
+            margin: 20px;
+        }
+        table {
+            margin: 20px auto;
+            border-spacing: 0px;
+            width: 80%;
+        }
+        table, th, td {
+            border: 1px solid #ccc;
+        }
+        th, td {
+            padding: 10px;
+            text-align: center;
+        }
+        th {
+            background-color: #f4f4f4;
+            cursor: pointer;
+        }
+        .controls {
+            margin: 10px 0;
+        }
+        .pagination {
+            margin: 10px 0;
+        }
+        .pagination button {
+            padding: 5px 10px;
+            margin: 2px;
+        }
+        .pagination button[disabled] {
+            background-color: #007bff;
+            color: white;
+            cursor: default;
+        }
+        .print-button {
+            padding: 10px 20px;
+            margin: 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        @media print {
+            body {
+                margin: 0;
+                padding: 0;
+                direction: rtl;
+            }
+            table {
+                width: 100%;
+                margin: 0;
+            }
+            th, td {
+                padding: 15px;
+                border: 1px solid black;
+            }
+            th {
+                background-color: #eee;
+                font-weight: bold;
+            }
+        }
+    </style>
+</head>
+<body>
+    <button class="print-button" onclick="printTable()">طباعة الجدول</button>
+    <h1>عرض ملف CSV على صفحات</h1>
+    <div class="controls">
+        <label>عدد الصفوف لكل صفحة:</label>
+        <select id="rowsPerPage">
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="1000">1000</option>
+        </select>
+        <input type="text" id="searchInput" placeholder="ابحث في الجدول..." />
+    </div>
+    <input type="file" id="fileInput" accept=".csv" />
+    <div id="rowCount"></div>
+    <table id="csvTable">
+        <thead></thead>
+        <tbody></tbody>
+    </table>
+    <div class="pagination" id="pagination"></div>
+
+    <script>
+        let csvData = [];
+        let currentPage = 1;
+        let rowsPerPage = 50;
+        let filteredData = [];
+
+        document.getElementById('fileInput').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file && file.name.endsWith(".csv")) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const content = e.target.result;
+                    csvData = parseCSV(content);
+                    filteredData = csvData.filter(row => row.length > 0);
+                    currentPage = 1;
+                    displayPage();
+                };
+                reader.readAsText(file);
+            } else {
+                alert("يرجى اختيار ملف CSV صالح.");
+            }
+        });
+
+        document.getElementById('rowsPerPage').addEventListener('change', function() {
+            rowsPerPage = parseInt(this.value);
+            currentPage = 1;
+            displayPage();
+        });
+
+        document.getElementById('searchInput').addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            filteredData = csvData.filter(row =>
+                row.some(cell => cell.toLowerCase().includes(searchTerm))
+            );
+            currentPage = 1;
+            displayPage();
+        });
+
+        function displayPage() {
+            const table = document.getElementById('csvTable');
+            const thead = table.querySelector("thead");
+            const tbody = table.querySelector("tbody");
+            const pagination = document.getElementById('pagination');
+            const rowCount = document.getElementById('rowCount');
+
+            thead.innerHTML = "";
+            tbody.innerHTML = "";
+            pagination.innerHTML = "";
+
+            if (filteredData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="100%">لا توجد بيانات للعرض</td></tr>';
+                rowCount.textContent = "";
+                return;
+            }
+
+            const headers = filteredData[0];
+            const headerRow = document.createElement("tr");
+            headers.forEach((header, index) => {
+                const th = document.createElement("th");
+                th.textContent = header.trim();
+                th.addEventListener('click', () => sortTable(index));
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+
+            const startIndex = (currentPage - 1) * rowsPerPage + 1;
+            const endIndex = Math.min(startIndex + rowsPerPage - 1, filteredData.length);
+
+            for (let i = startIndex; i < endIndex; i++) {
+                const row = filteredData[i];
+                const tr = document.createElement("tr");
+                row.forEach(cell => {
+                    const td = document.createElement("td");
+                    td.textContent = cell.trim() || "N/A";
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            }
+
+            const totalPages = Math.ceil((filteredData.length - 1) / rowsPerPage);
+            for (let i = 1; i <= totalPages; i++) {
+                const button = document.createElement("button");
+                button.textContent = i;
+                button.disabled = i === currentPage;
+                button.addEventListener('click', () => {
+                    currentPage = i;
+                    displayPage();
+                });
+                pagination.appendChild(button);
+            }
+
+            rowCount.textContent = `عرض ${endIndex - startIndex} من ${filteredData.length - 1}`;
+        }
+
+        function printTable() {
+            const table = document.getElementById("csvTable").outerHTML;
+            const printWindow = window.open('', '', 'height=600,width=800');
+            printWindow.document.write('<html><head><title>طباعة الجدول</title></head><body>');
+            printWindow.document.write('<style>table {border-collapse: collapse; width: 100%;} th, td {border: 1px solid black; padding: 15px; text-align: center;}</style>');
+            printWindow.document.write('<h1>طباعة الجدول</h1>');
+            printWindow.document.write(table);
+            printWindow.document.write('</body></html>');
+            printWindow.document.close();
+            printWindow.print();
+        }
+
+        function parseCSV(content) {
+            const rows = [];
+            let currentRow = [];
+            let currentCell = '';
+            let insideQuotes = false;
+
+            for (let i = 0; i < content.length; i++) {
+                const char = content[i];
+                const nextChar = content[i + 1];
+
+                if (char === '"' && nextChar === '"') {
+                    currentCell += '"';
+                    i++;
+                } else if (char === '"') {
+                    insideQuotes = !insideQuotes;
+                } else if (char === ',' && !insideQuotes) {
+                    currentRow.push(currentCell);
+                    currentCell = '';
+                } else if (char === '\n' && !insideQuotes) {
+                    currentRow.push(currentCell);
+                    rows.push(currentRow);
+                    currentRow = [];
+                    currentCell = '';
+                } else {
+                    currentCell += char;
+                }
+            }
+
+            if (currentCell || currentRow.length > 0) {
+                currentRow.push(currentCell);
+                rows.push(currentRow);
+            }
+
+            return rows;
+        }
+    </script>
+</body>
+</html>
